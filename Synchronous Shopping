@@ -1,0 +1,181 @@
+#include <assert.h>
+#include <ctype.h>
+#include <limits.h>
+#include <math.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+const int MAX_INT = 1<<30;
+
+typedef struct Item {
+    int key;
+    int value;
+    int node;
+} Item;
+
+typedef struct PriorityQueue {
+    Item* arr;
+    int size;
+    int cap;
+} Queue;
+
+Queue* initQueue() {
+    Queue* q = malloc(sizeof(Queue));
+    q->size = 0;
+    q->cap = 0;
+    q->arr = NULL;
+    return q;
+}
+
+void insert(Queue* q, int key, int value, int node) {
+    if (q->size == q->cap) {
+        q->cap = q->cap * 2 + 1;
+        q->arr = realloc(q->arr, q->cap * sizeof(Item));
+    }
+    q->arr[q->size].key = key;
+    q->arr[q->size].value = value;
+    q->arr[q->size].node = node;
+    q->size++;
+
+    // Up-heap
+    int idx = q->size - 1;
+    int parent_idx = (idx - 1) / 2;
+    while (parent_idx >= 0 && q->arr[idx].key < q->arr[parent_idx].key) {
+        Item t = q->arr[idx];
+        q->arr[idx] = q->arr[parent_idx];
+        q->arr[parent_idx] = t;
+        idx = parent_idx;
+        parent_idx = (idx - 1) / 2;
+    }
+}
+
+Item extractMin(Queue* q) {
+    Item item = q->arr[0];
+    q->arr[0] = q->arr[--q->size];
+    
+    // Down-heap
+    int idx = 0;
+    int left = idx * 2 + 1;
+    int right = idx * 2 + 2;
+    while (
+        (left < q->size && q->arr[left].key < q->arr[idx].key) ||
+        (right < q->size && q->arr[left].key < q->arr[idx].key)
+    ) {
+        if (
+            left < q->size && q->arr[left].key < q->arr[idx].key && 
+            (right >= q->size || q->arr[left].key < q->arr[right].key)
+        ) {
+            Item t = q->arr[idx];
+            q->arr[idx] = q->arr[left];
+            q->arr[left] = t;
+            idx = left;
+        } else {
+            Item t = q->arr[idx];
+            q->arr[idx] = q->arr[right];
+            q->arr[right] = t;
+            idx = right;
+        }
+        left = idx * 2 + 1;
+        right = idx * 2 + 2;
+    }
+    
+    return item;
+}
+
+int shop(int n, int k, int* t, int* B_size, int** B, int** W) {
+    int** shortest = malloc(n*sizeof(int*));
+    for (int i=0; i<n; i++) {
+        shortest[i] = malloc((1<<k)*sizeof(int));
+        for (int j=0; j<(1<<k); j++) {
+            shortest[i][j] = MAX_INT;
+        }
+    }
+
+    Queue* q = initQueue();
+    insert(q, 0, t[0], 0);
+    while (q->size > 0) {
+        Item item = extractMin(q);
+        int key = item.key, value=item.value, u = item.node;
+        // if (u == n-1) {
+        //     int opp = value ^ ((1<<k) - 1);
+        //     for (int i=0; i<=(1<<k)-1; i++) {
+        //         if (shortest[u][opp | i] < MAX_INT) return key;
+        //     }
+        // }
+        if (item.key >= shortest[u][value]) continue;
+        shortest[u][value] = item.key;
+        for (int i=0; i<B_size[u]; i++) {
+            int v = B[u][i], w = W[u][i];
+            insert(q, key + w, value | t[v], v);
+        }
+    }
+
+    int min = MAX_INT;
+    for (int i=0; i<(1<<k); i++) {
+        int cur = shortest[n-1][i];
+        for (int j=0; j<(1<<k); j++) {
+            if ((i | j) != (1<<k) - 1) continue;
+            int opp = shortest[n-1][j];
+            if (cur >= opp && min > cur) min = cur;
+            else if (opp >= cur && min > opp) min = opp;
+        }
+    }
+    return min;
+}
+
+int main()
+{
+    FILE* fptr = fopen(getenv("OUTPUT_PATH"), "w");
+    
+    int n, m, k; scanf("%d%d%d", &n, &m, &k);
+    int* t = malloc(n * sizeof(int));
+    
+    for (int i=0; i<n; i++) {
+        int n_fishes; scanf("%d", &n_fishes);
+        t[i] = 0;
+        for (int _=0; _<n_fishes; _++) {
+            int fish; scanf("%d", &fish);
+            t[i] |= 1<<(fish-1);
+        }
+    }
+    
+    int* B_size = malloc(n * sizeof(int)); // Vertex order
+    int* B_cap = malloc(n * sizeof(int)); // Capacity of B
+    int** B = malloc(n * sizeof(int*)); // Adjacent list
+    int** W = malloc(n * sizeof(int*)); // Adjacent weight
+    
+    for (int i=0; i<n; i++) {
+        B_size[i] = 0;
+        B_cap[i] = 0;
+        B[i] = NULL;
+        W[i] = NULL;
+    }
+    
+    for (int j=0; j<m; j++) {
+        int u, v, w; scanf("%d%d%d", &u, &v, &w);
+        u--; v--;
+
+        if (B_size[u] == B_cap[u]) {
+            B_cap[u] = B_cap[u] * 2 + 1;
+            B[u] = realloc(B[u], B_cap[u] * sizeof(int));
+            W[u] = realloc(W[u], B_cap[u] * sizeof(int));
+        }
+        B[u][B_size[u]] = v; W[u][B_size[u]] = w; B_size[u]++;
+
+        if (B_size[v] == B_cap[v]) {
+            B_cap[v] = B_cap[v] * 2 + 1;
+            B[v] = realloc(B[v], B_cap[v] * sizeof(int));
+            W[v] = realloc(W[v], B_cap[v] * sizeof(int));
+        }
+        B[v][B_size[v]] = u; W[v][B_size[v]] = w; B_size[v]++;
+    }
+
+    int res = shop(n, k, t, B_size, B, W);
+    fprintf(fptr, "%d\n", res);
+    fclose(fptr);
+    return 0;
+}
